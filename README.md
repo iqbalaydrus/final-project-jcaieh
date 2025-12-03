@@ -11,6 +11,7 @@ pip3 install -r web/requirements.txt
 ## Running API
 - First, you need to authenticate with Google Cloud cli. You 
   can follow the instructions [here](https://docs.cloud.google.com/sdk/docs/install-sdk#windows).
+- Run `gcloud init` to initialize the CLI.
 - Run `gcloud auth application-default login` to authenticate.
 - Create `.env` file in the `api` directory with the following contents:
 ```dotenv
