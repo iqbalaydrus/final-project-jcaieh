@@ -18,6 +18,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from google.cloud import storage
 from google.cloud.storage.blob import Blob
+from langchain_qdrant import QdrantVectorStore
+from langchain_openai import OpenAIEmbeddings
 
 import schema
 import agents
@@ -26,6 +28,10 @@ load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION")
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET)
@@ -34,6 +40,16 @@ bucket = storage_client.bucket(GCS_BUCKET)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     agents.db = sqlite3.connect("database.db")
+    # embeddings = OpenAIEmbeddings(
+    #     model="text-embedding-3-small",
+    #     api_key=OPENAI_API_KEY,
+    # )
+    # agents.qdrant = QdrantVectorStore.from_existing_collection(
+    #     embedding=embeddings,
+    #     collection_name=QDRANT_COLLECTION,
+    #     url=QDRANT_URL,
+    #     api_key=QDRANT_API_KEY,
+    # )
     yield
 
 
