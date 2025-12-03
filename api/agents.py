@@ -15,5 +15,5 @@ qdrant: Optional[QdrantVectorStore] = None
 
 
 # cv_file_contents can be None if the user didn't upload a CV
-def chat(req: schema.ChatRequest, cv_file_contents: Optional[list[str]]) -> str:
+def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     return "Hello World"

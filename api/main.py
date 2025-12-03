@@ -115,7 +115,10 @@ async def chat(
             tmp_file.seek(0)
             loader = PyPDFLoader(tmp_file.name)
             docs = loader.load()
-        resp = agents.chat(req, [page.page_content for page in docs])
+        content = ""
+        for page in docs:
+            content += page.page_content + "\n"
+        resp = agents.chat(req, content)
     else:
         resp = agents.chat(req, None)
     return schema.ChatResponse(message=schema.ChatMessage(role="ai", content=resp))
