@@ -1,7 +1,8 @@
-fastapi==0.123.4
+fastapi==0.123.5
 uvicorn==0.38.0
 aiosqlite==0.21.0
 dotenv==0.9.9
 pydantic==2.12.5
 python-multipart==0.0.20
 google-cloud-storage==3.6.0
+python-magic==0.4.27

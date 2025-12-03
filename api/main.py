@@ -3,6 +3,7 @@ from typing import Optional, Annotated
 from contextlib import asynccontextmanager
 
 import aiosqlite
+import magic
 from fastapi import (
     FastAPI,
     Depends,
@@ -15,6 +16,7 @@ from fastapi import (
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from google.cloud import storage
+from google.cloud.storage.blob import Blob
 
 import schema
 import agents
@@ -68,8 +70,13 @@ async def upload(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file extension"
         )
+    mime_type = magic.from_buffer(file.file.read(1024), mime=True)
+    if mime_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type"
+        )
     blob_name = f"uploads/{session_id}.pdf"
-    blob = bucket.blob(blob_name)
+    blob: Blob = bucket.blob(blob_name)
     blob.upload_from_file(
         file.file,
         rewind=True,
@@ -82,5 +89,5 @@ async def upload(
 async def chat(
     request: schema.ChatRequest,
     _: bool = Depends(verify_api_key),
-):
-    return {"message": "Hello World"}
+) -> schema.ChatResponse:
+    return schema.ChatResponse(message=schema.ChatMessage(role="ai", content="Hello world"))
