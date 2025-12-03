@@ -101,4 +101,4 @@ async def chat(
             resp = agents.chat(req, tmp_file.name)
     else:
         resp = agents.chat(req, None)
-    return resp
+    return schema.ChatResponse(message=schema.ChatMessage(role="ai", content=resp))
