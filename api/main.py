@@ -20,6 +20,7 @@ from google.cloud import storage
 from google.cloud.storage.blob import Blob
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
 
 load_dotenv()
 
@@ -112,7 +113,9 @@ async def chat(
             blob.download_to_file(tmp_file)
             tmp_file.flush()
             tmp_file.seek(0)
-            resp = agents.chat(req, tmp_file.name)
+            loader = PyPDFLoader(tmp_file.name)
+            docs = loader.load()
+        resp = agents.chat(req, [page.page_content for page in docs])
     else:
         resp = agents.chat(req, None)
     return schema.ChatResponse(message=schema.ChatMessage(role="ai", content=resp))

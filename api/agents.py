@@ -2,6 +2,7 @@ import os
 from typing import Optional
 
 import sqlite3
+
 from langchain_openai import ChatOpenAI
 from langchain_qdrant import QdrantVectorStore
 
@@ -13,6 +14,6 @@ db: Optional[sqlite3.Connection] = None
 qdrant: Optional[QdrantVectorStore] = None
 
 
-# cv_file_path can be None if the user didn't upload a CV
-def chat(req: schema.ChatRequest, cv_file_path: Optional[str]) -> str:
+# cv_file_contents can be None if the user didn't upload a CV
+def chat(req: schema.ChatRequest, cv_file_contents: Optional[list[str]]) -> str:
     return "Hello World"
