@@ -28,6 +28,7 @@ def chat_api(data: schema.ChatRequest) -> schema.ChatResponse:
         raise requests.HTTPError(resp.text) from e
     return schema.ChatResponse.model_validate(resp.json())
 
+
 def upload_api(file: UploadedFile):
     resp = requests.post(
         REST_API_BASE_URL + "/upload",
@@ -41,6 +42,7 @@ def upload_api(file: UploadedFile):
         resp.raise_for_status()
     except requests.HTTPError as e:
         raise requests.HTTPError(resp.text) from e
+
 
 def main_program():
     if "messages" not in st.session_state:
@@ -75,19 +77,18 @@ def main_program():
         accept_multiple_files=False,
     )
     if uploaded_file and ("cv_uploaded" not in st.session_state or st.session_state.cv_uploaded != uploaded_file.name):
-        with st.spinner("Uploading file...", show_time=True):
-            mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
-            if mime_type != "application/pdf":
-                st.write(":red[Please upload a PDF file]")
-                return
-            uploaded_file.seek(0)
-            try:
+        mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
+        if mime_type != "application/pdf":
+            st.write(":red[Please upload a PDF file]")
+            return
+        uploaded_file.seek(0)
+        try:
+            with st.spinner("Uploading file...", show_time=True):
                 upload_api(uploaded_file)
-            except requests.HTTPError as e:
-                st.write(f"Upload Error: :red[{str(e)}]")
-                return
-            st.session_state.cv_uploaded = uploaded_file.name
-
+        except requests.HTTPError as e:
+            st.write(f"Upload Error: :red[{str(e)}]")
+            return
+        st.session_state.cv_uploaded = uploaded_file.name
 
 
 st.title("Indonesian Job Agent")
