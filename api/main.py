@@ -1,4 +1,5 @@
 import os
+import tempfile
 from typing import Optional, Annotated
 from contextlib import asynccontextmanager
 
@@ -87,7 +88,17 @@ async def upload(
 
 @app.post("/chat")
 async def chat(
-    request: schema.ChatRequest,
+    req: schema.ChatRequest,
     _: bool = Depends(verify_api_key),
 ) -> schema.ChatResponse:
-    return schema.ChatResponse(message=schema.ChatMessage(role="ai", content="Hello world"))
+    blob_name = f"uploads/{req.session_id}.pdf"
+    blob: Blob = bucket.blob(blob_name)
+    if blob.exists():
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_file:
+            blob.download_to_file(tmp_file)
+            tmp_file.flush()
+            tmp_file.seek(0)
+            resp = agents.chat(req, tmp_file.name)
+    else:
+        resp = agents.chat(req, None)
+    return resp
