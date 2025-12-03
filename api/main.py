@@ -1,9 +1,9 @@
 import os
 import tempfile
-from typing import Optional, Annotated
+from typing import Annotated
 from contextlib import asynccontextmanager
 
-import aiosqlite
+import sqlite3
 import magic
 from fastapi import (
     FastAPI,
@@ -27,15 +27,13 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
 
-db: Optional[aiosqlite.Connection] = None
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db
-    db = await aiosqlite.connect("database.db")
+    agents.db = sqlite3.connect("database.db")
     yield
 
 

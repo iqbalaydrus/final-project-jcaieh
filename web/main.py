@@ -52,7 +52,9 @@ def main_program():
             st.markdown(message["content"])
     prompt = st.chat_input("Ask your question here")
     if prompt:
-        history = [schema.ChatMessage.model_validate(m) for m in st.session_state.messages]
+        history = [
+            schema.ChatMessage.model_validate(m) for m in st.session_state.messages
+        ]
         with st.chat_message("user"):
             st.markdown(prompt)
         try:
@@ -76,7 +78,10 @@ def main_program():
         type="pdf",
         accept_multiple_files=False,
     )
-    if uploaded_file and ("cv_uploaded" not in st.session_state or st.session_state.cv_uploaded != uploaded_file.name):
+    if uploaded_file and (
+        "cv_uploaded" not in st.session_state
+        or st.session_state.cv_uploaded != uploaded_file.name
+    ):
         mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
         if mime_type != "application/pdf":
             st.write(":red[Please upload a PDF file]")
