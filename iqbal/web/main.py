@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import uuid4
 
 import streamlit as st
 import requests
@@ -26,6 +27,8 @@ st.write(
 
 for k, v in st.session_state.items():
     st.session_state[k] = v
+if not st.session_state.get("session_id"):
+    st.session_state.session_id = str(uuid4())
 
 if not st.session_state.get("token") or st.session_state.token != DISCORD_CHANNEL_NAME:
     st.text_input("Enter our discord channel name - needed for auth:", key="token")

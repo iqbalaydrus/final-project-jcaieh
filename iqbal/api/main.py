@@ -1,17 +1,32 @@
 import os
-from typing import Optional
+from typing import Optional, Annotated
 from contextlib import asynccontextmanager
 
 import aiosqlite
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    Form,
+    File,
+)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from google.cloud import storage
+
+import schema
+import agents
 
 load_dotenv()
 
-db: Optional[aiosqlite.Connection] = None
 API_KEY = os.getenv("API_KEY")
+GCS_BUCKET = os.getenv("GCS_BUCKET")
+
+db: Optional[aiosqlite.Connection] = None
+storage_client = storage.Client()
+bucket = storage_client.bucket(GCS_BUCKET)
 
 
 @asynccontextmanager
@@ -35,27 +50,31 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(bearer_sc
     return True
 
 
-@app.post("/upload")
+@app.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload(
-    file: UploadFile,
+    session_id: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
     _: bool = Depends(verify_api_key),
 ):
-    return {"message": "Hello World"}
-
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-
-class ChatRequest(BaseModel):
-    history: list[ChatMessage]
-    message: ChatMessage
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Invalid file extension")
+    blob_name = f"uploads/{session_id}.pdf"
+    blob = bucket.blob(blob_name)
+    blob.upload_from_file(
+        file.file,
+        rewind=True,
+        content_type=file.content_type,
+    )
+    return {"id": blob_name}
 
 
 @app.post("/chat")
 async def chat(
-    request: ChatRequest,
+    request: schema.ChatRequest,
     _: bool = Depends(verify_api_key),
 ):
     return {"message": "Hello World"}
