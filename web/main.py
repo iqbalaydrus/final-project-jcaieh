@@ -54,13 +54,14 @@ def main_program():
         with st.chat_message("user"):
             st.markdown(prompt)
         try:
-            resp = chat_api(
-                schema.ChatRequest(
-                    history=history,
-                    session_id=st.session_state.session_id,
-                    message=schema.ChatMessage(role="user", content=prompt),
-                ),
-            )
+            with st.spinner("Thinking...", show_time=True):
+                resp = chat_api(
+                    schema.ChatRequest(
+                        history=history,
+                        session_id=st.session_state.session_id,
+                        message=schema.ChatMessage(role="user", content=prompt),
+                    ),
+                )
         except (ValidationError, requests.HTTPError) as e:
             st.write(f"API Error: :red[{str(e)}]")
             return
@@ -74,17 +75,18 @@ def main_program():
         accept_multiple_files=False,
     )
     if uploaded_file and ("cv_uploaded" not in st.session_state or st.session_state.cv_uploaded != uploaded_file.name):
-        mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
-        if mime_type != "application/pdf":
-            st.write(":red[Please upload a PDF file]")
-            return
-        uploaded_file.seek(0)
-        try:
-            upload_api(uploaded_file)
-        except requests.HTTPError as e:
-            st.write(f"Upload Error: :red[{str(e)}]")
-            return
-        st.session_state.cv_uploaded = uploaded_file.name
+        with st.spinner("Uploading file...", show_time=True):
+            mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
+            if mime_type != "application/pdf":
+                st.write(":red[Please upload a PDF file]")
+                return
+            uploaded_file.seek(0)
+            try:
+                upload_api(uploaded_file)
+            except requests.HTTPError as e:
+                st.write(f"Upload Error: :red[{str(e)}]")
+                return
+            st.session_state.cv_uploaded = uploaded_file.name
 
 
 
