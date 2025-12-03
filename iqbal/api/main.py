@@ -57,11 +57,17 @@ async def upload(
     _: bool = Depends(verify_api_key),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No filename provided"
+        )
     if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Invalid file type")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type"
+        )
     if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Invalid file extension")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file extension"
+        )
     blob_name = f"uploads/{session_id}.pdf"
     blob = bucket.blob(blob_name)
     blob.upload_from_file(
