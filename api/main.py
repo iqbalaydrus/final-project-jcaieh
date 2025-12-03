@@ -21,10 +21,10 @@ from google.cloud.storage.blob import Blob
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 
+load_dotenv()
+
 import schema
 import agents
-
-load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
