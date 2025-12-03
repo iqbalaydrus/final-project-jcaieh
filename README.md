@@ -21,7 +21,7 @@ GCS_BUCKET=jcaieh-finpro
 - Finally, run `uvicorn main:app --host 0.0.0.0 --port 8154` in the `api` directory.
 
 ## Running Web
-- Create `.streamlit/secrets.toml` file with the following contents:
+- Create `.streamlit/secrets.toml` file with the following contents in `web` directory:
 ```toml
 DISCORD_CHANNEL_NAME = "our-discord-channel-name" # this will be used in the first page of the streamlit app
 REST_API_BASE_URL = "http://127.0.0.1:8154"
