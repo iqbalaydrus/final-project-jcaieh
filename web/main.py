@@ -1,4 +1,3 @@
-from typing import Any
 from uuid import uuid4
 
 import streamlit as st
@@ -14,25 +13,34 @@ REST_API_BASE_URL = st.secrets["REST_API_BASE_URL"]
 REST_API_KEY = st.secrets["REST_API_KEY"]
 
 
-def chat_api(data: Any) -> schema.ChatResponse:
+def chat_api(data: schema.ChatRequest) -> schema.ChatResponse:
     resp = requests.post(
         REST_API_BASE_URL + "/chat",
         headers={
             "Authorization": "Bearer " + REST_API_KEY,
             "Content-Type": "application/json",
         },
-        json=data,
+        json=data.model_dump(mode="json"),
     )
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        raise requests.HTTPError(resp.text) from e
     return schema.ChatResponse.model_validate(resp.json())
 
 def upload_api(file: UploadedFile):
     resp = requests.post(
         REST_API_BASE_URL + "/upload",
+        headers={
+            "Authorization": "Bearer " + REST_API_KEY,
+        },
         files={"file": (file.name, file, "application/pdf")},
         data={"session_id": st.session_state.session_id},
     )
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        raise requests.HTTPError(resp.text) from e
 
 def main_program():
     if "messages" not in st.session_state:
@@ -40,12 +48,31 @@ def main_program():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+    prompt = st.chat_input("Ask your question here")
+    if prompt:
+        history = [schema.ChatMessage.model_validate(m) for m in st.session_state.messages]
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        try:
+            resp = chat_api(
+                schema.ChatRequest(
+                    history=history,
+                    session_id=st.session_state.session_id,
+                    message=schema.ChatMessage(role="user", content=prompt),
+                ),
+            )
+        except (ValidationError, requests.HTTPError) as e:
+            st.write(f"API Error: :red[{str(e)}]")
+            return
+        with st.chat_message("ai"):
+            st.markdown(resp.message.content)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append(resp.message.model_dump(mode="json"))
     uploaded_file = st.file_uploader(
         "Upload your CV",
         type="pdf",
         accept_multiple_files=False,
     )
-    prompt = st.chat_input("Ask your question here")
     if uploaded_file and ("cv_uploaded" not in st.session_state or st.session_state.cv_uploaded != uploaded_file.name):
         mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
         if mime_type != "application/pdf":
@@ -58,25 +85,6 @@ def main_program():
             st.write(f"Upload Error: :red[{str(e)}]")
             return
         st.session_state.cv_uploaded = uploaded_file.name
-    if prompt:
-        history = st.session_state.messages.copy()
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        try:
-            resp = chat_api(
-                {
-                    "session_id": st.session_state.session_id,
-                    "message": prompt,
-                    "history": history,
-                },
-            )
-        except (ValidationError, requests.HTTPError) as e:
-            st.write(f"API Error: :red[{str(e)}]")
-            return
-        with st.chat_message("ai"):
-            st.markdown(resp.message.content)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.session_state.messages.append(resp.model_dump(mode="json"))
 
 
 
