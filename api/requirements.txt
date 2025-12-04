@@ -4,7 +4,7 @@ dotenv==0.9.9
 pydantic==2.12.5
 python-multipart==0.0.20
 google-cloud-storage==3.6.0
-python-magic==0.4.27
+python-magic-bin==0.4.14
 langgraph==1.0.4
 langchain==1.1.0
 langchain-core==1.1.0
