@@ -2,14 +2,13 @@ import sqlite3
 import json
 import pandas as pd
 
-# Define the path to your data and the name for your database
-JSONL_FILE_PATH = 'data/indonesian_job_postings.jsonl' #<-- Make sure this path is correct
+# Define the path to the data and the name for the database
+JSONL_FILE_PATH = 'data/indonesian_job_postings.jsonl'
 DB_PATH = 'database.db'
 TABLE_NAME = 'jobs'
 
 def create_database():
-    # These are the columns you want in your SQL database
-    # Adjust them if needed based on the dataset
+    # Columns for SQL database
     sql_columns = [
         'work_type', 'salary', 'location', 'company_name',
         'job_title', '_scrape_timestamp'
@@ -23,7 +22,7 @@ def create_database():
 
     df = pd.DataFrame(records)
 
-    # Keep only the columns you need for the SQL table
+    # Keep only the columns needed for the SQL table
     df_sql = df[sql_columns]
 
     # Connect to SQLite and save the data
