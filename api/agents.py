@@ -7,10 +7,9 @@ from langchain_openai import ChatOpenAI
 from langchain_qdrant import QdrantVectorStore
 
 # New imports for the agents
-from langchain.agents import create_sql_agent
-from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
 from langchain_community.utilities.sql_database import SQLDatabase
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain.chains import LLMChain
 
 import schema
@@ -62,19 +61,19 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     try:
         # Default to SQL agent if the routing fails
         route = router_chain.run(user_question)
-        print(f"Router decided: {route}")
+        print(f"[{req.session_id}] Router decided: {route}")
 
         if "sql" in route.lower():
-            print("--- Activating SQL Agent ---")
+            print(f"[{req.session_id}] --- Activating SQL Agent ---")
             sql_agent = get_sql_agent(llm)
             # Pass the user question directly to the SQL agent
             agent_response = sql_agent.run(user_question)
             return agent_response
         else:
-            print("--- Activating RAG Agent (Placeholder) ---")
+            print(f"[{req.session_id}] --- Activating RAG Agent (Placeholder) ---")
             # When RAG agent is ready, will call it here.
             return rag_response
 
     except Exception as e:
-        print(f"An error occurred in the main agent: {e}")
+        print(f"[{req.session_id}] An error occurred in the main agent: {e}")
         return "Sorry, I encountered an error. Please try rephrasing your question."
