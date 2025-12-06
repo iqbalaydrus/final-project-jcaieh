@@ -96,18 +96,37 @@ def main_program():
         st.session_state.cv_uploaded = uploaded_file.name
 
 
-st.title("Indonesian Job Agent")
-st.write(
-    """An agent to help you find your dream job in Indonesia. Built with [Streamlit](https://streamlit.io) and [OpenAI](https://openai.com)."""
-)
+@st.dialog("Authentication", dismissible=False)
+def enter_discord_channel_name():
+    token = st.text_input("Enter our discord channel name:")
+    if token == DISCORD_CHANNEL_NAME:
+        st.session_state.token = token
+        st.rerun()
+    elif token:
+        st.write(":red[Incorrect channel name]")
+
 
 for k, v in st.session_state.items():
     st.session_state[k] = v
 if not st.session_state.get("session_id"):
     st.session_state.session_id = str(uuid4())
 
+with st.sidebar:
+    st.image("logo.png")
+    st.divider()
+    st.write(
+        "AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV."
+    )
+    st.divider()
+    with st.expander("Session ID"):
+        st.write(st.session_state.session_id)
+
+st.title("Job Indo")
+st.write(
+    """An agent to help you find your dream job in Indonesia. Built with [Streamlit](https://streamlit.io) and [OpenAI](https://openai.com)."""
+)
+
 if not st.session_state.get("token") or st.session_state.token != DISCORD_CHANNEL_NAME:
-    st.text_input("Enter our discord channel name - needed for auth:", key="token")
-    st.write(":red[Incorrect channel name]")
+    enter_discord_channel_name()
 else:
     main_program()
