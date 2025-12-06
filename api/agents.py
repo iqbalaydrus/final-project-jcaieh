@@ -10,7 +10,7 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
 from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_core.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage, HumanMessage
 import os
 
@@ -106,7 +106,7 @@ Based on the user's last question and the conversation history, respond with onl
 User Question: "{question}"
 """
     router_prompt = PromptTemplate(template=router_prompt_template, input_variables=["history", "question"])
-    router_chain = LLMChain(llm=llm, prompt=router_prompt)
+    router_chain = router_prompt | llm | StrOutputParser()
 
     # Create a string from the history for the router prompt
     history_str = "\n".join([f"{msg.role.capitalize()}: {msg.content}" for msg in req.history or []])
@@ -116,7 +116,7 @@ User Question: "{question}"
 
     try:
         # Default to SQL agent if the routing fails
-        route = router_chain.run(question=user_question, history=history_str)
+        route = router_chain.invoke({"question": user_question, "history": history_str})
         print(f"[{req.session_id}] Router decided: {route}")
 
         if "sql" in route.lower():
@@ -190,10 +190,10 @@ class ResumeAgent:
         Output:
         """
         prompt = PromptTemplate.from_template(prompt_template)
-        chain = LLMChain(llm=self.llm, prompt=prompt)
+        chain = prompt | self.llm | StrOutputParser()
         
         try:
-            result = chain.run(job_description=job_description)
+            result = chain.invoke({"job_description": job_description})
             keywords = [keyword.strip() for keyword in result.split(',') if keyword.strip()]
             print(f"ResumeAgent: Extracted keywords: {keywords}")
             return keywords
@@ -267,12 +267,12 @@ class ResumeAgent:
         """
         
         prompt = PromptTemplate.from_template(prompt_template)
-        chain = LLMChain(llm=self.llm, prompt=prompt)
+        chain = prompt | self.llm | StrOutputParser()
         
         try:
             # Convert list of keywords to a comma-separated string for the prompt
             keywords_str = ", ".join(jd_keywords)
-            rewritten_cv = chain.run(cv_text=cv_text, keywords=keywords_str)
+            rewritten_cv = chain.invoke({"cv_text": cv_text, "keywords": keywords_str})
             print("ResumeAgent: Successfully rewrote resume.")
             return rewritten_cv
         except Exception as e:
