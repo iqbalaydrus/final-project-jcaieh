@@ -11,6 +11,8 @@ from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_ag
 from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_core.prompts import PromptTemplate
 from langchain.chains import LLMChain
+from langchain_core.messages import AIMessage, HumanMessage
+import os
 
 import schema
 
@@ -39,6 +41,15 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     """
     user_question = req.message.content
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=OPENAI_API_KEY)
+    
+    # Convert message history to LangChain format for conversational context
+    lc_history = []
+    if req.history:
+        for msg in req.history:
+            if msg.role == "human":
+                lc_history.append(HumanMessage(content=msg.content))
+            elif msg.role == "ai":
+                lc_history.append(AIMessage(content=msg.content))
 
     # --- Agent States & Multi-turn Conversation ---
     # Check if the last message was the AI asking for a job description
@@ -80,34 +91,47 @@ Here is your resume optimization report:
 """
         return response.strip()
 
-    # 1. Router: Decide which agent to use
-    router_prompt_template = """
-    You are an expert query router. Your job is to determine whether a user's question should be answered by a RAG agent, a SQL agent, or a Resume agent.
-    - The RAG agent handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
-    - The SQL agent handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'.
-    - The Resume agent handles requests to analyze, score, or rewrite a user's resume based on a job description. Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
+    # 1. Router: Decide which agent to use, now with history
+    router_prompt_template = """You are an expert query router. Your job is to determine whether a user's question, in the context of a conversation history, should be answered by a RAG agent, a SQL agent, or a Resume agent.
+- The RAG agent handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
+- The SQL agent handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'. A follow-up like "what about in Bandung?" after a question about jobs in Jakarta should be routed to SQL.
+- The Resume agent handles requests to analyze, score, or rewrite a user's resume based on a job description. Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
 
-    Based on the user's question below, respond with "RAG", "SQL", or "RESUME".
+Based on the user's last question and the conversation history, respond with only "RAG", "SQL", or "RESUME".
 
-    User Question: "{question}"
-    """
-    router_prompt = PromptTemplate.from_template(router_prompt_template)
+<conversation_history>
+{history}
+</conversation_history>
+
+User Question: "{question}"
+"""
+    router_prompt = PromptTemplate(template=router_prompt_template, input_variables=["history", "question"])
     router_chain = LLMChain(llm=llm, prompt=router_prompt)
+
+    # Create a string from the history for the router prompt
+    history_str = "\n".join([f"{msg.role.capitalize()}: {msg.content}" for msg in req.history or []])
 
     # Placeholder for the RAG agent's response
     rag_response = "I am the RAG agent. This feature is being integrated."
 
     try:
         # Default to SQL agent if the routing fails
-        route = router_chain.run(user_question)
+        route = router_chain.run(question=user_question, history=history_str)
         print(f"[{req.session_id}] Router decided: {route}")
 
         if "sql" in route.lower():
             print(f"[{req.session_id}] --- Activating SQL Agent ---")
             sql_agent = get_sql_agent(llm)
-            # Pass the user question directly to the SQL agent
-            agent_response = sql_agent.run(user_question)
-            return agent_response
+            
+            # Prepare agent input with LangChain-formatted history
+            agent_input = {
+                "input": user_question,
+                "chat_history": lc_history
+            }
+            
+            # Invoke the agent and get the output
+            agent_response = sql_agent.invoke(agent_input)
+            return agent_response.get("output", "Sorry, I could not find an answer.")
         elif "resume" in route.lower():
             print(f"[{req.session_id}] --- Activating Resume Agent (Initial Request) ---")
             if not cv_file_contents:
