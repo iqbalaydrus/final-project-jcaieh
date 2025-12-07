@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import streamlit as st
@@ -112,7 +113,11 @@ if not st.session_state.get("session_id"):
     st.session_state.session_id = str(uuid4())
 
 with st.sidebar:
-    st.image("logo.png")
+    # streamlit cloud has different working directory
+    if not os.path.exists("logo.png"):
+        st.image("web/logo.png")
+    else:
+        st.image("logo.png")
     st.divider()
     st.write(
         "AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV."
