@@ -175,9 +175,9 @@ if "usage_history" not in st.session_state:
 with st.sidebar:
     # streamlit cloud has different working directory
     if not os.path.exists("logo.png"):
-        st.image("web/logo.png", use_column_width=True)
+        st.image("web/logo.png", use_container_width=True)
     else:
-        st.image("logo.png", use_column_width=True)
+        st.image("logo.png", use_container_width=True)
     st.divider()
     st.write(
         "**AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV.**"
