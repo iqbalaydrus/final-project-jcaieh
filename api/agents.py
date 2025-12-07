@@ -1,10 +1,7 @@
 import re
 from typing import Optional, List, Dict
 
-import sqlite3
-
 from langchain_openai import ChatOpenAI
-from langchain_qdrant import QdrantVectorStore
 
 # New imports for the agents
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
@@ -15,16 +12,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 import os
 
 import schema
+import rag_agent
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-db: Optional[sqlite3.Connection] = None
-qdrant: Optional[QdrantVectorStore] = None
+db: Optional[SQLDatabase] = None
 
 # Create and return SQL agent
 def get_sql_agent(llm, db_path='database.db'):
     """Creates a LangChain SQL Agent."""
-    db = SQLDatabase.from_uri(f"sqlite:///{db_path}")
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     agent_executor = create_sql_agent(
         llm=llm,
@@ -40,8 +36,8 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     This is the main agent that routes questions to the appropriate specialist agent.
     """
     user_question = req.message.content
-    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=OPENAI_API_KEY)
-    
+    llm = ChatOpenAI(model="gpt-5-nano", temperature=0, api_key=OPENAI_API_KEY)
+
     # Convert message history to LangChain format for conversational context
     lc_history = []
     if req.history:
@@ -64,15 +60,15 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     if is_waiting_for_jd:
         if not cv_file_contents:
             return "Error: CV content is missing. Please upload your CV again before pasting the job description."
-        
+
         print(f"[{req.session_id}] --- Executing Resume Analysis ---")
         resume_agent = ResumeAgent(llm)
         job_description = user_question
         analysis_result = resume_agent.run(cv_text=cv_file_contents, job_description=job_description)
-        
+
         if "error" in analysis_result:
             return analysis_result["error"]
-            
+
         # Format the response
         response = f"""
 ### Resume Analysis Complete
@@ -111,9 +107,6 @@ User Question: "{question}"
     # Create a string from the history for the router prompt
     history_str = "\n".join([f"{msg.role.capitalize()}: {msg.content}" for msg in req.history or []])
 
-    # Placeholder for the RAG agent's response
-    rag_response = "I am the RAG agent. This feature is being integrated."
-
     try:
         # Default to SQL agent if the routing fails
         route = router_chain.invoke({"question": user_question, "history": history_str})
@@ -122,13 +115,13 @@ User Question: "{question}"
         if "sql" in route.lower():
             print(f"[{req.session_id}] --- Activating SQL Agent ---")
             sql_agent = get_sql_agent(llm)
-            
+
             # Prepare agent input with LangChain-formatted history
             agent_input = {
                 "input": user_question,
                 "chat_history": lc_history
             }
-            
+
             # Invoke the agent and get the output
             agent_response = sql_agent.invoke(agent_input)
             return agent_response.get("output", "Sorry, I could not find an answer.")
@@ -139,8 +132,8 @@ User Question: "{question}"
             # This is the prompt that sets up the next turn
             return "Resume agent is active. Please paste the job description you are targeting, and I will begin the analysis."
         else:
-            print(f"[{req.session_id}] --- Activating RAG Agent (Placeholder) ---")
-            return rag_response
+            print(f"[{req.session_id}] --- Activating RAG Agent ---")
+            return rag_agent.ask_job_question(req)
 
     except Exception as e:
         print(f"[{req.session_id}] An error occurred in the main agent: {e}")
@@ -167,7 +160,6 @@ class ResumeAgent:
             'reformed', 'reorganized', 'replaced', 'restructured', 'revamped', 'saved', 'scaled', 'scheduled',
             'secured', 'selected', 'simplified', 'slashed', 'solved', 'spearheaded', 'specified', 'standardized',
             'streamlined', 'strengthened', 'structured', 'succeeded', 'supervised', 'surpassed', 'systematized',
-
             'targeted', 'taught', 'tested', 'trained', 'transformed', 'tripled', 'unified', 'updated', 'upgraded',
             'validated', 'verbalized', 'verified', 'visualized', 'won'
         ]
@@ -191,7 +183,7 @@ class ResumeAgent:
         """
         prompt = PromptTemplate.from_template(prompt_template)
         chain = prompt | self.llm | StrOutputParser()
-        
+
         try:
             result = chain.invoke({"job_description": job_description})
             keywords = [keyword.strip() for keyword in result.split(',') if keyword.strip()]
@@ -205,7 +197,7 @@ class ResumeAgent:
         """Calculates a heuristic-based ATS score out of 100."""
         print("ResumeAgent: Calculating ATS score...")
         score = 0
-        
+
         # 1. Keyword Matching (70 points)
         if jd_keywords:
             matches = 0
@@ -231,7 +223,7 @@ class ResumeAgent:
         action_verb_score = min(len(found_verbs), 10)
         score += action_verb_score
         print(f"ResumeAgent: Action verb score: {action_verb_score}/10")
-        
+
         final_score = min(int(score), 100)
         print(f"ResumeAgent: Final Score: {final_score}/100")
         return final_score
@@ -239,7 +231,7 @@ class ResumeAgent:
     def _rewrite_resume_with_llm(self, cv_text: str, jd_keywords: List[str]) -> str:
         """Rewrites the resume to be more impactful and keyword-rich."""
         print("ResumeAgent: Rewriting resume with LLM...")
-        
+
         prompt_template = """
         You are a world-class career coach and professional resume writer, an expert at optimizing resumes for both Applicant Tracking Systems (ATS) and human recruiters.
 
@@ -265,10 +257,10 @@ class ResumeAgent:
 
         Now, begin the rewrite.
         """
-        
+
         prompt = PromptTemplate.from_template(prompt_template)
         chain = prompt | self.llm | StrOutputParser()
-        
+
         try:
             # Convert list of keywords to a comma-separated string for the prompt
             keywords_str = ", ".join(jd_keywords)
@@ -284,26 +276,26 @@ class ResumeAgent:
         Runs the full resume analysis and rewrite workflow.
         """
         print("ResumeAgent: Starting analysis...")
-        
+
         # 1. Extract keywords from the job description
         jd_keywords = self._extract_keywords_from_jd(job_description)
-        
+
         if not jd_keywords:
             return {
                 "error": "Could not extract keywords from the job description. Please try again with a different one."
             }
-        
+
         # 2. Calculate the "before" score
         before_score = self._calculate_ats_score(cv_text, jd_keywords)
-        
+
         # 3. Rewrite the resume
         rewritten_cv = self._rewrite_resume_with_llm(cv_text, jd_keywords)
-        
+
         # 4. Calculate the "after" score
         after_score = self._calculate_ats_score(rewritten_cv, jd_keywords) # No longer a placeholder increase
-        
+
         print("ResumeAgent: Analysis complete.")
-        
+
         return {
             "before_score": before_score,
             "after_score": after_score,

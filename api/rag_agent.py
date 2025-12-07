@@ -13,89 +13,21 @@ This agent retrieves job information from Qdrant vector database
 and will work as part of a multi-agent system orchestrated by supervisor.
 """
 
-# INSTALL DEPENDENCIES
+import os
+from typing import Optional
 
-!pip install -qU langchain-community langchain-openai langchain-core
-!pip install -qU langgraph langgraph-supervisor
-!pip install -qU qdrant-client
-!pip install -qU langchain-qdrant
-
-# IMPORT LIBRARIES
-
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_qdrant import QdrantVectorStore
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_agent
 
-from langgraph.prebuilt import create_react_agent
-from langgraph_supervisor import create_supervisor
+import schema
 
-import getpass
-import os
-from google.colab import userdata
-from qdrant_client import QdrantClient
-
-# CREDENTIAL SETUP
-
-# OpenAI API Key
-if userdata.get('OPENAI_API_KEY'):
-    os.environ["OPENAI_API_KEY"] = userdata.get('OPENAI_API_KEY')
-else:
-    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI : ")
-
-# Qdrant credentials
-if userdata.get('QDRANT_URL'):
-    QDRANT_URL = userdata.get('QDRANT_URL')
-else:
-    QDRANT_URL = input("Enter Qdrant URL : ")
-
-if userdata.get('QDRANT_API_KEY'):
-    QDRANT_API_KEY = userdata.get('QDRANT_API_KEY')
-else:
-    QDRANT_API_KEY = getpass.getpass("Enter Qdrant API Key : ") or None
-
-COLLECTION_NAME = "indonesian_job_v2"
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# INITIALIZE QDRANT CLIENT AND VECTORSTORE
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-# embeddings model
-embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    openai_api_key=os.environ["OPENAI_API_KEY"]
-)
-
-# Qdrant client
-qdrant_client = QdrantClient(
-    url=QDRANT_URL,
-    api_key=QDRANT_API_KEY,
-    timeout=60 #mencegah request yang terlalu lama
-)
-
-# Verifying data collection
-try:
-    collection_info = qdrant_client.get_collection(COLLECTION_NAME)
-    print(f"Connected to collection: {COLLECTION_NAME}")
-    print(f"Total points: {collection_info.points_count}")
-except Exception as e:
-    print(f"Error connecting to collection: {e}")
-    raise
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Initialize Qdrant vectorstore
-vectorstore = QdrantVectorStore(
-    client=qdrant_client,
-    collection_name=COLLECTION_NAME,
-    embedding=embeddings
-)
+vectorstore: Optional[QdrantVectorStore] = None
 
-# Create retriever
-retriever = vectorstore.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 5}
-)
-
-print("Qdrant vectorstore initialized successfully!")
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # CREATE RETRIEVAL TOOL
@@ -125,14 +57,16 @@ def search_indonesian_jobs(query: str) -> str:
     """
     try:
         # Retrieve relevant documents using the retriever
+        retriever = vectorstore.as_retriever(
+            search_type="similarity", search_kwargs={"k": 5}
+        )
         docs = retriever.invoke(query)
 
         if not docs:
             return "Maaf, tidak ditemukan informasi lowongan kerja yang relevan dengan pertanyaan Anda."
 
         # Format results
-        results = []
-        results.append(f"Ditemukan {len(docs)} lowongan kerja yang relevan:\n")
+        results = [f"Ditemukan {len(docs)} lowongan kerja yang relevan:\n"]
 
         for i, doc in enumerate(docs, 1):
             metadata = doc.metadata
@@ -162,16 +96,6 @@ Deskripsi:
         import traceback
         traceback.print_exc()
         return error_msg
-
-# Test the tool
-print("Testing retrieval tool...")
-test_result = search_indonesian_jobs.invoke("data scientist Jakarta")
-if len(test_result) > 500:
-  hasil = test_result = test_result[:500] + "..."
-  print(hasil)
-else :
-  hasil = test_result
-  print(hasil)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # CREATE RETRIEVAL AGENT
@@ -240,130 +164,35 @@ Step 5: Offer to help with follow-up questions
 CRITICAL RULE: Always search first, answer second. Never skip the tool usage.'''
 
 # Create retrieval agent
-job_retrieval_agent = create_react_agent(
-    model="openai:gpt-4o-mini",
+job_retrieval_agent = create_agent(
+    model=ChatOpenAI(model="gpt-5-nano", api_key=OPENAI_API_KEY),
     tools=[search_indonesian_jobs],
-    prompt=retrieval_prompt,
-    name="job_retrieval_agent"
+    system_prompt=retrieval_prompt,
+    name="job_retrieval_agent",
 )
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# TEST RETRIEVAL AGENT
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-print("="*70)
-print("TEST RETRIEVAL AGENT")
-print("="*70 + "\n")
-
-# Test with a sample query
-test_query = "Cari lowongan data engineer di Jakarta dengan gaji tinggi"
-print(f"Query: {test_query}\n")
-
-
-print("Agent Response (Stream):\n")
-for chunk in job_retrieval_agent.stream(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": test_query
-            }
-        ]
-    }
-):
-    # Print each step
-    agent_name = list(chunk.keys())[0]
-    print(f"[{agent_name}]")
-
-    if "messages" in chunk[agent_name]:
-        for msg in chunk[agent_name]["messages"]:
-            if hasattr(msg, 'content') and msg.content:
-                print(f"  Content: {msg.content[:200]}...")
-            if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                print(f"  Tool Calls: {[tc['name'] for tc in msg.tool_calls]}")
-    print()
-
-print("\n" + "="*70)
-print("FINAL RESPONSE")
-print("="*70 + "\n")
-
-# Get final response
-response = job_retrieval_agent.invoke(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": test_query
-            }
-        ]
-    }
-)
-
-# Extract and display final answer
-final_answer = response['messages'][-1].content
-print(final_answer)
-
-def ask_job_question(question: str, verbose: bool = True):
+def ask_job_question(req: schema.ChatRequest, verbose: bool = True) -> str:
     """
     Helper function to query the job retrieval agent.
 
     Args:
-        question (str): User's question in Indonesian
+        req (schema.ChatRequest): User's question and chat history
         verbose (bool): Print detailed execution steps
 
     Returns:
         str: Agent's response
     """
     if verbose :
-        print(f"\n{'='*70}")
-        print(f"Question: {question}")
-        print(f"{'='*70}\n")
+        print(f"[{req.session_id}] {'='*70}")
+        print(f"[{req.session_id}] Question: {req.message.content}")
+        print(f"[{req.session_id}] {'='*70}")
 
-    response = job_retrieval_agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": question
-                }
-            ]
-        }
-    )
+    response = job_retrieval_agent.invoke(req.message)
 
     answer = response['messages'][-1].content
 
     if verbose:
-        print(f"Answer:\n{answer}")
-        print(f"\n{'='*70}\n")
+        print(f"[{req.session_id}] Answer:\n{answer}")
+        print(f"[{req.session_id}] {'='*70}")
 
     return answer
-
-"""# Test the Agent"""
-
-user_query = [
-    '''
-looking for jobs that suitable for candidate with these skills :
-- proficient in using Aspen Hysis, instrucalc, Matlab.
-- experienced for creating process safety documents such as HAZOP, etc
-- 5+ years experience as a chemical process engineer in petrochemical industry
-- proficient in reading P&ID and PFD
-- familiar with control method such as PID, MPC, etc
-- familiar with field instrument integrating with sensors.
-
-located in Jakarta and high salary (more than Rp.15.000.000) is highly prefered
-    '''
-]
-
-answer = ask_job_question(user_query[0], verbose=True)
-
-user_query = [
-    '''
-looking digital marketing specialist position Jakarta salary >15000000
-SEO SEM social media ads content marketing analytics
-Google Ads Meta Ads email marketing campaign optimization
-experience 3-5+ years
-
-    '''
-]
-
-answer = ask_job_question(user_query[0], verbose=True)

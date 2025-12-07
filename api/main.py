@@ -21,11 +21,13 @@ from google.cloud.storage.blob import Blob
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.utilities.sql_database import SQLDatabase
 
 load_dotenv()
 
 import schema
 import agents
+import rag_agent
 
 API_KEY = os.getenv("API_KEY")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
@@ -40,17 +42,17 @@ bucket = storage_client.bucket(GCS_BUCKET)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    agents.db = sqlite3.connect("database.db")
-    # embeddings = OpenAIEmbeddings(
-    #     model="text-embedding-3-small",
-    #     api_key=OPENAI_API_KEY,
-    # )
-    # agents.qdrant = QdrantVectorStore.from_existing_collection(
-    #     embedding=embeddings,
-    #     collection_name=QDRANT_COLLECTION,
-    #     url=QDRANT_URL,
-    #     api_key=QDRANT_API_KEY,
-    # )
+    agents.db = SQLDatabase.from_uri("sqlite:///database.db")
+    embeddings = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        api_key=OPENAI_API_KEY,
+    )
+    rag_agent.vectorstore = QdrantVectorStore.from_existing_collection(
+        embedding=embeddings,
+        collection_name=QDRANT_COLLECTION,
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+    )
     yield
 
 
