@@ -3,7 +3,6 @@ import tempfile
 from typing import Annotated
 from contextlib import asynccontextmanager
 
-import sqlite3
 import magic
 from fastapi import (
     FastAPI,

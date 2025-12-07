@@ -21,8 +21,6 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 
-import schema
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Initialize Qdrant vectorstore
@@ -165,34 +163,46 @@ CRITICAL RULE: Always search first, answer second. Never skip the tool usage.'''
 
 # Create retrieval agent
 job_retrieval_agent = create_agent(
-    model=ChatOpenAI(model="gpt-5-nano", api_key=OPENAI_API_KEY),
+    model=ChatOpenAI(
+        model="gpt-3.5-turbo",
+        api_key=OPENAI_API_KEY,
+    ),
     tools=[search_indonesian_jobs],
     system_prompt=retrieval_prompt,
     name="job_retrieval_agent",
 )
 
-def ask_job_question(req: schema.ChatRequest, verbose: bool = True) -> str:
+def ask_job_question(
+    question: str,
+    history: str,
+    session_id: str,
+    verbose: bool = True,
+) -> str:
     """
     Helper function to query the job retrieval agent.
 
     Args:
-        req (schema.ChatRequest): User's question and chat history
+        question (str): User's question
+        history (str): Previous conversation history
+        session_id (str): Unique identifier for the conversation
         verbose (bool): Print detailed execution steps
 
     Returns:
         str: Agent's response
     """
-    if verbose :
-        print(f"[{req.session_id}] {'='*70}")
-        print(f"[{req.session_id}] Question: {req.message.content}")
-        print(f"[{req.session_id}] {'='*70}")
+    if verbose:
+        print(f"[{session_id}] {'='*70}")
+        print(f"[{session_id}] Question: {question}")
+        print(f"[{session_id}] {'='*70}")
 
-    response = job_retrieval_agent.invoke(req.message)
+    response = job_retrieval_agent.invoke(
+        {"messages": [{"role": "user", "content": question}]}
+    )
 
     answer = response['messages'][-1].content
 
     if verbose:
-        print(f"[{req.session_id}] Answer:\n{answer}")
-        print(f"[{req.session_id}] {'='*70}")
+        print(f"[{session_id}] Answer:\n{answer}")
+        print(f"[{session_id}] {'='*70}")
 
     return answer

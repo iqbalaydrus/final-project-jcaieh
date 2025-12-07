@@ -19,14 +19,14 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 db: Optional[SQLDatabase] = None
 
 # Create and return SQL agent
-def get_sql_agent(llm, db_path='database.db'):
+def get_sql_agent(llm):
     """Creates a LangChain SQL Agent."""
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     agent_executor = create_sql_agent(
         llm=llm,
         toolkit=toolkit,
         verbose=True,
-        handle_parsing_errors=True
+        handle_parsing_errors=True,
     )
     return agent_executor
 
@@ -36,7 +36,10 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
     This is the main agent that routes questions to the appropriate specialist agent.
     """
     user_question = req.message.content
-    llm = ChatOpenAI(model="gpt-5-nano", temperature=0, api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(
+        model="gpt-3.5-turbo",
+        api_key=OPENAI_API_KEY,
+    )
 
     # Convert message history to LangChain format for conversational context
     lc_history = []
@@ -133,7 +136,7 @@ User Question: "{question}"
             return "Resume agent is active. Please paste the job description you are targeting, and I will begin the analysis."
         else:
             print(f"[{req.session_id}] --- Activating RAG Agent ---")
-            return rag_agent.ask_job_question(req)
+            return rag_agent.ask_job_question(user_question, history_str, req.session_id)
 
     except Exception as e:
         print(f"[{req.session_id}] An error occurred in the main agent: {e}")
