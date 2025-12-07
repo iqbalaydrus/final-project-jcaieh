@@ -109,6 +109,8 @@ async def chat(
 ) -> schema.ChatResponse:
     blob_name = f"uploads/{req.session_id}.pdf"
     blob: Blob = bucket.blob(blob_name)
+    
+    chat_response_data = {}
     if blob.exists():
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_file:
             blob.download_to_file(tmp_file)
@@ -119,7 +121,13 @@ async def chat(
         content = ""
         for page in docs:
             content += page.page_content + "\n"
-        resp = agents.chat(req, content)
+        chat_response_data = agents.chat(req, content)
     else:
-        resp = agents.chat(req, None)
-    return schema.ChatResponse(message=schema.ChatMessage(role="ai", content=resp))
+        chat_response_data = agents.chat(req, None)
+        
+    return schema.ChatResponse(
+        message=schema.ChatMessage(role="ai", content=chat_response_data.get("content", "No response.")),
+        agent_used=chat_response_data.get("agent_used"),
+        prompt_tokens=chat_response_data.get("prompt_tokens"),
+        completion_tokens=chat_response_data.get("completion_tokens"),
+    )

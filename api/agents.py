@@ -1,14 +1,15 @@
 import re
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 from langchain_openai import ChatOpenAI
 
 # New imports for the agents
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
+from langchain_community.callbacks import get_openai_callback
 from langchain_community.utilities.sql_database import SQLDatabase
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 import os
 
 import schema
@@ -30,16 +31,42 @@ def get_sql_agent(llm):
     )
     return agent_executor
 
+def get_chat_agent(llm: ChatOpenAI, history: List[dict]):
+    """
+    Creates a new agent for general chat, with guardrails to keep the conversation on topic.
+    """
+    guardrail_system_prompt = """You are a helpful assistant for the "Job Seeker AI" application. Your primary role is to engage in conversations with users about their job search, career development, the Indonesian job market, and provide advice on CVs and resumes. You should leverage the conversation history to provide contextual answers.
+
+**IMPORTANT GUARDRAIL:** You must politely decline any questions or topics that are NOT related to job searching, career advice, job market analysis, CVs, or resumes. Do not answer questions about unrelated topics like animals, history, cooking, etc. If a user asks an off-topic question, respond with something like: "I am an assistant focused on job-related topics. I can't help with that, but I'd be happy to discuss your career goals or analyze a job posting for you."
+"""
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=guardrail_system_prompt),
+        *history,
+        ("human", "{question}"),
+    ])
+    chain = prompt | llm | StrOutputParser()
+    return chain
+
+
 # Chat function that acts as the MAIN AGENT
-def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
+def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> Dict[str, Any]:
     """
     This is the main agent that routes questions to the appropriate specialist agent.
+    It now returns a dictionary with the response and usage data.
     """
     user_question = req.message.content
     llm = ChatOpenAI(
-        model="gpt-3.5-turbo",
+        model="gpt-4o-mini",
         api_key=OPENAI_API_KEY,
     )
+
+    # Default response in case of errors
+    error_response = {
+        "content": "Sorry, I encountered an error. Please try again.",
+        "agent_used": "Error",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+    }
 
     # Convert message history to LangChain format for conversational context
     lc_history = []
@@ -58,22 +85,33 @@ def chat(req: schema.ChatRequest, cv_file_contents: Optional[str]) -> str:
         if last_message.role == 'ai' and "please paste the job description" in last_message.content.lower():
             is_waiting_for_jd = True
 
-    # If waiting for a job description, the user's message is the job description.
-    # Bypass the router and go straight to the ResumeAgent.
+    # If waiting for a job description, go straight to the ResumeAgent.
     if is_waiting_for_jd:
         if not cv_file_contents:
-            return "Error: CV content is missing. Please upload your CV again before pasting the job description."
+            return {
+                "content": "Error: CV content is missing. Please upload your CV again before pasting the job description.",
+                "agent_used": "ResumeAgent",
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+            }
 
         print(f"[{req.session_id}] --- Executing Resume Analysis ---")
         resume_agent = ResumeAgent(llm)
         job_description = user_question
-        analysis_result = resume_agent.run(cv_text=cv_file_contents, job_description=job_description)
 
-        if "error" in analysis_result:
-            return analysis_result["error"]
+        with get_openai_callback() as cb:
+            analysis_result = resume_agent.run(cv_text=cv_file_contents, job_description=job_description)
 
-        # Format the response
-        response = f"""
+            if "error" in analysis_result:
+                return {
+                    "content": analysis_result["error"],
+                    "agent_used": "ResumeAgent",
+                    "prompt_tokens": cb.prompt_tokens,
+                    "completion_tokens": cb.completion_tokens,
+                }
+
+            # Format the response
+            response_content = f"""
 ### Resume Analysis Complete
 
 Here is your resume optimization report:
@@ -88,15 +126,21 @@ Here is your resume optimization report:
 
 {analysis_result['rewritten_cv']}
 """
-        return response.strip()
+            return {
+                "content": response_content.strip(),
+                "agent_used": "ResumeAgent",
+                "prompt_tokens": cb.prompt_tokens,
+                "completion_tokens": cb.completion_tokens,
+            }
 
-    # 1. Router: Decide which agent to use, now with history
-    router_prompt_template = """You are an expert query router. Your job is to determine whether a user's question, in the context of a conversation history, should be answered by a RAG agent, a SQL agent, or a Resume agent.
-- The RAG agent handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
-- The SQL agent handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'. A follow-up like "what about in Bandung?" after a question about jobs in Jakarta should be routed to SQL.
-- The Resume agent handles requests to analyze, score, or rewrite a user's resume based on a job description. Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
+    # 1. Router: Decide which agent to use
+    router_prompt_template = """You are an expert query router. Your job is to determine whether a user's question, in the context of a conversation history, should be answered by a RAG agent, a SQL agent, a Resume agent, or a general Chat agent.
+- RAG agent: Handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
+- SQL agent: Handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'.
+- Resume agent: Handles requests to analyze, score, or rewrite a user's resume ('CV'). Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
+- Chat agent: Handles general conversation, follow-up questions that require conversational context, or consultations about the chat history itself. If the query doesn't fit other agents, this is the default.
 
-Based on the user's last question and the conversation history, respond with only "RAG", "SQL", or "RESUME".
+Based on the user's last question and the conversation history, respond with only "RAG", "SQL", "RESUME", or "CHAT".
 
 <conversation_history>
 {history}
@@ -107,40 +151,67 @@ User Question: "{question}"
     router_prompt = PromptTemplate(template=router_prompt_template, input_variables=["history", "question"])
     router_chain = router_prompt | llm | StrOutputParser()
 
-    # Create a string from the history for the router prompt
     history_str = "\n".join([f"{msg.role.capitalize()}: {msg.content}" for msg in req.history or []])
 
     try:
-        # Default to SQL agent if the routing fails
-        route = router_chain.invoke({"question": user_question, "history": history_str})
-        print(f"[{req.session_id}] Router decided: {route}")
+        with get_openai_callback() as cb:
+            route = router_chain.invoke({"question": user_question, "history": history_str})
+            # This callback only counts the tokens for the router itself. We will wrap each agent call below.
+            print(f"[{req.session_id}] Router decided: {route} (tokens: {cb.total_tokens})")
 
         if "sql" in route.lower():
             print(f"[{req.session_id}] --- Activating SQL Agent ---")
             sql_agent = get_sql_agent(llm)
+            agent_input = {"input": user_question, "chat_history": lc_history}
+            with get_openai_callback() as sql_cb:
+                agent_response = sql_agent.invoke(agent_input)
+                return {
+                    "content": agent_response.get("output", "Sorry, I could not find an answer."),
+                    "agent_used": "SQLAgent",
+                    "prompt_tokens": sql_cb.prompt_tokens,
+                    "completion_tokens": sql_cb.completion_tokens,
+                }
 
-            # Prepare agent input with LangChain-formatted history
-            agent_input = {
-                "input": user_question,
-                "chat_history": lc_history
-            }
-
-            # Invoke the agent and get the output
-            agent_response = sql_agent.invoke(agent_input)
-            return agent_response.get("output", "Sorry, I could not find an answer.")
         elif "resume" in route.lower():
             print(f"[{req.session_id}] --- Activating Resume Agent (Initial Request) ---")
             if not cv_file_contents:
-                return "It looks like you want to work on your resume. Please upload your CV first using the button on the sidebar."
-            # This is the prompt that sets up the next turn
-            return "Resume agent is active. Please paste the job description you are targeting, and I will begin the analysis."
-        else:
+                content = "It looks like you want to work on your resume. Please upload your CV first using the button on the sidebar."
+            else:
+                content = "Resume agent is active. Please paste the job description you are targeting, and I will begin the analysis."
+            return {
+                "content": content,
+                "agent_used": "ResumeAgent",
+                "prompt_tokens": 0, # No LLM call yet
+                "completion_tokens": 0,
+            }
+
+        elif "rag" in route.lower():
             print(f"[{req.session_id}] --- Activating RAG Agent ---")
-            return rag_agent.ask_job_question(user_question, history_str, req.session_id)
+            # Assuming rag_agent.ask_job_question is modified to return a dict with tokens
+            with get_openai_callback() as rag_cb:
+                response_content = rag_agent.ask_job_question(user_question, history_str, req.session_id)
+                return {
+                    "content": response_content,
+                    "agent_used": "RAGAgent",
+                    "prompt_tokens": rag_cb.prompt_tokens,
+                    "completion_tokens": rag_cb.completion_tokens,
+                }
+        
+        else: # Default to CHAT agent
+            print(f"[{req.session_id}] --- Activating Chat Agent ---")
+            chat_agent = get_chat_agent(llm, lc_history)
+            with get_openai_callback() as chat_cb:
+                response_content = chat_agent.invoke({"question": user_question})
+                return {
+                    "content": response_content,
+                    "agent_used": "ChatAgent",
+                    "prompt_tokens": chat_cb.prompt_tokens,
+                    "completion_tokens": chat_cb.completion_tokens,
+                }
 
     except Exception as e:
         print(f"[{req.session_id}] An error occurred in the main agent: {e}")
-        return "Sorry, I encountered an error. Please try rephrasing your question."
+        return error_response
 
 class ResumeAgent:
     """

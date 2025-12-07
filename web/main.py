@@ -9,6 +9,12 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 import schema
 
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="JobIndo: Smart Indonesian Job Analyser",
+    page_icon="📄",
+)
+
 DISCORD_CHANNEL_NAME = st.secrets["DISCORD_CHANNEL_NAME"]
 REST_API_BASE_URL = st.secrets["REST_API_BASE_URL"]
 REST_API_KEY = st.secrets["REST_API_KEY"]
@@ -46,11 +52,14 @@ def upload_api(file: UploadedFile):
 
 
 def main_program():
+    # --- Chat UI ---
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+
     prompt = st.chat_input("Ask your question here")
     if prompt:
         history = [
@@ -58,6 +67,7 @@ def main_program():
         ]
         with st.chat_message("user"):
             st.markdown(prompt)
+        
         try:
             with st.spinner("Thinking...", show_time=True):
                 resp = chat_api(
@@ -70,31 +80,78 @@ def main_program():
         except (ValidationError, requests.HTTPError) as e:
             st.write(f"API Error: :red[{str(e)}]")
             return
+
         with st.chat_message("ai"):
             st.markdown(resp.message.content)
+            
+        # Append messages and usage history
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.session_state.messages.append(resp.message.model_dump(mode="json"))
-    uploaded_file = st.file_uploader(
-        "Upload your CV",
-        type="pdf",
-        accept_multiple_files=False,
-    )
-    if uploaded_file and (
-        "cv_uploaded" not in st.session_state
-        or st.session_state.cv_uploaded != uploaded_file.name
-    ):
-        mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
-        if mime_type != "application/pdf":
-            st.write(":red[Please upload a PDF file]")
-            return
-        uploaded_file.seek(0)
-        try:
-            with st.spinner("Uploading file...", show_time=True):
-                upload_api(uploaded_file)
-        except requests.HTTPError as e:
-            st.write(f"Upload Error: :red[{str(e)}]")
-            return
-        st.session_state.cv_uploaded = uploaded_file.name
+        st.session_state.usage_history.append({
+            "agent_used": resp.agent_used or "N/A",
+            "prompt_tokens": resp.prompt_tokens or 0,
+            "completion_tokens": resp.completion_tokens or 0,
+        })
+        # Rerun to show the updated expander immediately
+        st.rerun()
+
+    # --- Sidebar CV Uploader ---
+    with st.sidebar:
+        st.header("📄 CV Upload")
+        uploaded_file = st.file_uploader(
+            "Upload your CV to analyze it against a job description.",
+            type="pdf",
+            accept_multiple_files=False,
+        )
+        if uploaded_file and (
+            "cv_uploaded" not in st.session_state
+            or st.session_state.cv_uploaded != uploaded_file.name
+        ):
+            mime_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
+            if mime_type != "application/pdf":
+                st.error("Please upload a valid PDF file.", icon="📄")
+                return
+            uploaded_file.seek(0)
+            try:
+                with st.spinner("Uploading file...", show_time=True):
+                    upload_api(uploaded_file)
+                st.success(f"Successfully uploaded `{uploaded_file.name}`", icon="✅")
+            except requests.HTTPError as e:
+                st.error(f"Upload Error: {str(e)}", icon="🔥")
+                return
+            st.session_state.cv_uploaded = uploaded_file.name
+
+    # --- Usage & Cost Expander ---
+    with st.expander("Tool Calls & Usage Details"):
+        if not st.session_state.usage_history:
+            st.info("No AI interactions yet in this session.")
+        else:
+            last_usage = st.session_state.usage_history[-1]
+            
+            # --- Calculate Totals ---
+            total_prompt_tokens = sum(item['prompt_tokens'] for item in st.session_state.usage_history)
+            total_completion_tokens = sum(item['completion_tokens'] for item in st.session_state.usage_history)
+            total_tokens = total_prompt_tokens + total_completion_tokens
+            
+            # Cost calculation (gpt-4o-mini pricing)
+            # Input: $0.15 / 1M tokens, Output: $0.60 / 1M tokens
+            # $1 = 17000 IDR
+            input_cost_usd = (total_prompt_tokens / 1_000_000) * 0.15
+            output_cost_usd = (total_completion_tokens / 1_000_000) * 0.60
+            total_cost_usd = input_cost_usd + output_cost_usd
+            total_cost_idr = total_cost_usd * 17000
+
+            st.markdown(f"**Last Agent Used:** `{last_usage['agent_used']}`")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(label="Total Session Tokens", value=f"{total_tokens:,}")
+            with col2:
+                st.metric(label="Total Session Cost (USD)", value=f"${total_cost_usd:,.6f}")
+            with col3:
+                st.metric(label="Total Session Cost (IDR)", value=f"Rp {total_cost_idr:,.2f}")
+
+            st.dataframe(st.session_state.usage_history, use_container_width=True)
 
 
 @st.dialog("Authentication", dismissible=False)
@@ -111,17 +168,28 @@ for k, v in st.session_state.items():
     st.session_state[k] = v
 if not st.session_state.get("session_id"):
     st.session_state.session_id = str(uuid4())
+# Initialize usage history
+if "usage_history" not in st.session_state:
+    st.session_state.usage_history = []
 
 with st.sidebar:
     # streamlit cloud has different working directory
     if not os.path.exists("logo.png"):
-        st.image("web/logo.png")
+        st.image("web/logo.png", use_column_width=True)
     else:
-        st.image("logo.png")
+        st.image("logo.png", use_column_width=True)
     st.divider()
     st.write(
-        "AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV."
+        "**AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV.**"
     )
+    st.divider()
+    with st.expander("💡 Quick Guide"):
+        st.markdown("""
+        1.  **Ask general questions** about the job market or career advice.
+        2.  **Ask specific questions** about salary, location, or job type to query our database.
+        3.  **Upload your CV** using the uploader below to activate the Resume Agent.
+        4.  After uploading, ask to **"optimize my CV"** then paste a job description to get a full analysis and rewrite.
+        """)
     st.divider()
     with st.expander("Session ID"):
         st.write(st.session_state.session_id)

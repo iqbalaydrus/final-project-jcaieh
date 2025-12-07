@@ -16,3 +16,6 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessage
+    agent_used: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
