@@ -129,9 +129,6 @@ def main_program():
                 st.error(f"Upload Error: {str(e)}", icon="🔥")
                 return
             st.session_state.cv_uploaded = uploaded_file.name
-        st.divider()
-        with st.expander("Session ID"):
-            st.write(st.session_state.session_id)
 
     # --- Usage & Cost Expander ---
     with st.expander("Tool Calls & Usage Details"):
@@ -154,6 +151,7 @@ def main_program():
             total_cost_idr = total_cost_usd * 17000
 
             st.markdown(f"**Last Agent Used:** `{last_usage['agent_used']}`")
+            st.markdown(f"**Session ID:** `{st.session_state.session_id}`")
 
             col1, col2, col3 = st.columns(3)
             with col1:
