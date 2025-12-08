@@ -55,7 +55,7 @@ def main_program():
     # --- Chat UI ---
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
+
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -67,7 +67,7 @@ def main_program():
         ]
         with st.chat_message("user"):
             st.markdown(prompt)
-        
+
         try:
             with st.spinner("Thinking...", show_time=True):
                 resp = chat_api(
@@ -83,7 +83,7 @@ def main_program():
 
         with st.chat_message("ai"):
             st.markdown(resp.message.content)
-            
+
         # Append messages and usage history
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.session_state.messages.append(resp.message.model_dump(mode="json"))
@@ -97,6 +97,15 @@ def main_program():
 
     # --- Sidebar CV Uploader ---
     with st.sidebar:
+        with st.expander("💡 Quick Guide"):
+            st.markdown(
+                """
+            1.  **Ask general questions** about the job market or career advice.
+            2.  **Ask specific questions** about salary, location, or job type to query our database.
+            3.  **Upload your CV** using the uploader below to activate the Resume Agent.
+            4.  After uploading, ask to **"optimize my CV"** then paste a job description to get a full analysis and rewrite.
+            """
+            )
         st.header("📄 CV Upload")
         uploaded_file = st.file_uploader(
             "Upload your CV to analyze it against a job description.",
@@ -120,6 +129,9 @@ def main_program():
                 st.error(f"Upload Error: {str(e)}", icon="🔥")
                 return
             st.session_state.cv_uploaded = uploaded_file.name
+        st.divider()
+        with st.expander("Session ID"):
+            st.write(st.session_state.session_id)
 
     # --- Usage & Cost Expander ---
     with st.expander("Tool Calls & Usage Details"):
@@ -127,12 +139,12 @@ def main_program():
             st.info("No AI interactions yet in this session.")
         else:
             last_usage = st.session_state.usage_history[-1]
-            
+
             # --- Calculate Totals ---
             total_prompt_tokens = sum(item['prompt_tokens'] for item in st.session_state.usage_history)
             total_completion_tokens = sum(item['completion_tokens'] for item in st.session_state.usage_history)
             total_tokens = total_prompt_tokens + total_completion_tokens
-            
+
             # Cost calculation (gpt-4o-mini pricing)
             # Input: $0.15 / 1M tokens, Output: $0.60 / 1M tokens
             # $1 = 17000 IDR
@@ -142,7 +154,7 @@ def main_program():
             total_cost_idr = total_cost_usd * 17000
 
             st.markdown(f"**Last Agent Used:** `{last_usage['agent_used']}`")
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric(label="Total Session Tokens", value=f"{total_tokens:,}")
@@ -183,16 +195,6 @@ with st.sidebar:
         "**AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV.**"
     )
     st.divider()
-    with st.expander("💡 Quick Guide"):
-        st.markdown("""
-        1.  **Ask general questions** about the job market or career advice.
-        2.  **Ask specific questions** about salary, location, or job type to query our database.
-        3.  **Upload your CV** using the uploader below to activate the Resume Agent.
-        4.  After uploading, ask to **"optimize my CV"** then paste a job description to get a full analysis and rewrite.
-        """)
-    st.divider()
-    with st.expander("Session ID"):
-        st.write(st.session_state.session_id)
 
 st.title("Job Indo")
 st.write(
