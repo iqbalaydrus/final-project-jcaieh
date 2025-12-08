@@ -164,7 +164,7 @@ CRITICAL RULE: Always search first, answer second. Never skip the tool usage.'''
 # Create retrieval agent
 job_retrieval_agent = create_agent(
     model=ChatOpenAI(
-        model="gpt-3.5-turbo",
+        model="gpt-4o-mini",
         api_key=OPENAI_API_KEY,
     ),
     tools=[search_indonesian_jobs],
