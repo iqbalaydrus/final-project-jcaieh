@@ -27,6 +27,7 @@ load_dotenv()
 import schema
 import agents
 import rag_agent
+import consultation_agent
 
 API_KEY = os.getenv("API_KEY")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
@@ -46,12 +47,14 @@ async def lifespan(app: FastAPI):
         model="text-embedding-3-small",
         api_key=OPENAI_API_KEY,
     )
-    rag_agent.vectorstore = QdrantVectorStore.from_existing_collection(
+    vectorstore_loc = QdrantVectorStore.from_existing_collection(
         embedding=embeddings,
         collection_name=QDRANT_COLLECTION,
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,
     )
+    rag_agent.vectorstore = vectorstore_loc
+    consultation_agent.vectorstore = vectorstore_loc
     yield
 
 

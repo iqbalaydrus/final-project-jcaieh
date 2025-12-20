@@ -1,11 +1,16 @@
 import os
+from typing import Optional
+
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore
 from langchain_core.tools import tool
 from langchain.agents import create_agent
-from rag_agent import search_indonesian_jobs, vectorstore
+from rag_agent import search_indonesian_jobs
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+
+vectorstore: Optional[QdrantVectorStore] = None
 
 # ===== llm model setup =====
 llm = ChatOpenAI(
