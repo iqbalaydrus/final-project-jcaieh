@@ -14,6 +14,7 @@ import os
 
 import schema
 import rag_agent
+import consultation_agent
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -138,9 +139,10 @@ Here is your resume optimization report:
 - RAG agent: Handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
 - SQL agent: Handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'.
 - Resume agent: Handles requests to analyze, score, or rewrite a user's resume ('CV'). Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
+- Consultation agent: Handles career consultation questions, such as job recommendations, salary negotiations, and career advice. Look for keywords like 'career', 'job', 'salary', 'negotiation', 'advice'.
 - Chat agent: Handles general conversation, follow-up questions that require conversational context, or consultations about the chat history itself. If the query doesn't fit other agents, this is the default.
 
-Based on the user's last question and the conversation history, respond with only "RAG", "SQL", "RESUME", or "CHAT".
+Based on the user's last question and the conversation history, respond with only "RAG", "SQL", "RESUME", "CONSULTATION", or "CHAT".
 
 <conversation_history>
 {history}
@@ -171,7 +173,6 @@ User Question: "{question}"
                     "prompt_tokens": sql_cb.prompt_tokens,
                     "completion_tokens": sql_cb.completion_tokens,
                 }
-
         elif "resume" in route.lower():
             print(f"[{req.session_id}] --- Activating Resume Agent (Initial Request) ---")
             if not cv_file_contents:
@@ -184,7 +185,6 @@ User Question: "{question}"
                 "prompt_tokens": 0, # No LLM call yet
                 "completion_tokens": 0,
             }
-
         elif "rag" in route.lower():
             print(f"[{req.session_id}] --- Activating RAG Agent ---")
             # Assuming rag_agent.ask_job_question is modified to return a dict with tokens
@@ -196,7 +196,24 @@ User Question: "{question}"
                     "prompt_tokens": rag_cb.prompt_tokens,
                     "completion_tokens": rag_cb.completion_tokens,
                 }
-        
+        elif "consultation" in route.lower():
+            print(f"[{req.session_id}] --- Activating Consultation Agent ---")
+            with get_openai_callback() as consultation_cb:
+                if cv_file_contents:
+                    question = ("<cv_contents>\n" +
+                                cv_file_contents +
+                                "</cv_contents>\n\n<user_question>" +
+                                user_question +
+                                "</user_question>")
+                else:
+                    question = user_question
+                response_content = consultation_agent.career_consultation_agent(question)
+                return {
+                    "content": response_content,
+                    "agent_used": "ConsultationAgent",
+                    "prompt_tokens": consultation_cb.prompt_tokens,
+                    "completion_tokens": consultation_cb.completion_tokens,
+                }
         else: # Default to CHAT agent
             print(f"[{req.session_id}] --- Activating Chat Agent ---")
             chat_agent = get_chat_agent(llm, lc_history)
@@ -208,7 +225,6 @@ User Question: "{question}"
                     "prompt_tokens": chat_cb.prompt_tokens,
                     "completion_tokens": chat_cb.completion_tokens,
                 }
-
     except Exception as e:
         print(f"[{req.session_id}] An error occurred in the main agent: {e}")
         return error_response

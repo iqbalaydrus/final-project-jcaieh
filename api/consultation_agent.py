@@ -1,37 +1,19 @@
 import os
-import streamlit as st
-from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_qdrant import QdrantVectorStore
 from langchain_core.tools import tool
 from langchain.agents import create_agent
-from rag_agent import search_indonesian_jobs
+from rag_agent import search_indonesian_jobs, vectorstore
 
-# ===== SECRET KEY =====
-load_dotenv()
-
-QDRANT_URL = os.getenv("QDRANT_URL") 
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 # ===== llm model setup =====
 llm = ChatOpenAI(
-    model="gpt-4o-mini", 
+    model="gpt-4o-mini",
     api_key=OPENAI_API_KEY)
 embeddings = OpenAIEmbeddings(
     model="text-embedding-3-small", 
     api_key=OPENAI_API_KEY)
-
-# ===== QDRANT COLLECTION =====
-collection_name = "indonesian_job_v2"
-qdrant = QdrantVectorStore.from_existing_collection(
-    embedding=embeddings,
-    collection_name=collection_name,
-    url=QDRANT_URL,
-    api_key=QDRANT_API_KEY
-)
-
 
 # career consultation tool
 @tool
@@ -48,7 +30,7 @@ def career_consultation(user_profile: str) -> str:
     - Use "indonesian_job_v2" Qdrant collection and LLM knowledge if needed to supplement courses and certifications recommendations 
     """
 
-    results = qdrant.similarity_search(user_profile, k=5)
+    results = vectorstore.similarity_search(user_profile, k=5)
 
     if not results:
         return "No relevant job data found for career consultation."
@@ -190,7 +172,7 @@ STRICT RULES:
 - don't unified job recommendation and list of available jobs sections into one section. REMEMBER : JOB RECOMMENDATIONS section is for SUGGESTING suitable job titles based on user's profile using LLM knowledge and retrieved data as reference, while LIST OF AVAILABLE JOBS section is for listing ACTUAL job vacancies from "indonesian_job_v2" database using "search_indonesian_jobs" tool.
 """
 
-def career_consultation_agent(question: str):
+def career_consultation_agent(question: str) -> str:
     agent = create_agent(
         model=llm,
         tools=[search_indonesian_jobs, career_consultation],
@@ -206,14 +188,6 @@ def career_consultation_agent(question: str):
     })
 
     if not result or "messages" not in result:
-        return {
-            "answer": "Internal error occurred.",
-            "selected_agent": "career_consultation_agent",
-            "tool_messages": "No tool executed."
-        }
+        return "Internal error occurred."
     answer = result["messages"][-1].content
-    return {
-        "answer": answer,
-        "selected_agent": "career_consultation_agent",
-        "tool_messages": "search_indonesian_jobs and/or career_consultation executed."
-    }
+    return answer
