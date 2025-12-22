@@ -167,7 +167,7 @@ def main_program():
             with col4:
                 st.metric(label="Duration", value=f"{last_usage['duration']:.2f}s")
 
-            st.dataframe(st.session_state.usage_history, use_container_width=True)
+            st.dataframe(st.session_state.usage_history, width="stretch")
 
 
 @st.dialog("Authentication", dismissible=False)
@@ -191,9 +191,9 @@ if "usage_history" not in st.session_state:
 with st.sidebar:
     # streamlit cloud has different working directory
     if not os.path.exists("logo.png"):
-        st.image("web/logo.png", use_container_width=True)
+        st.image("web/logo.png", width="stretch")
     else:
-        st.image("logo.png", use_container_width=True)
+        st.image("logo.png", width="stretch")
     st.divider()
     st.write(
         "**AI service for finding vacancies in Indonesia, answering detailed job questions, and providing intelligent career recommendations based on your data and CV.**"
