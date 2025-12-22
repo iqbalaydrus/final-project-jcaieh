@@ -1,4 +1,5 @@
 import os
+import time
 from uuid import uuid4
 
 import streamlit as st
@@ -68,6 +69,7 @@ def main_program():
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        start = time.time()
         try:
             with st.spinner("Thinking...", show_time=True):
                 resp = chat_api(
@@ -81,6 +83,7 @@ def main_program():
             st.write(f"API Error: :red[{str(e)}]")
             return
 
+        duration = time.time() - start
         with st.chat_message("ai"):
             st.markdown(resp.message.content)
 
@@ -91,6 +94,7 @@ def main_program():
             "agent_used": resp.agent_used or "N/A",
             "prompt_tokens": resp.prompt_tokens or 0,
             "completion_tokens": resp.completion_tokens or 0,
+            "duration": duration,
         })
         # Rerun to show the updated expander immediately
         st.rerun()
@@ -153,13 +157,15 @@ def main_program():
             st.markdown(f"**Last Agent Used:** `{last_usage['agent_used']}`")
             st.markdown(f"**Session ID:** `{st.session_state.session_id}`")
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric(label="Total Session Tokens", value=f"{total_tokens:,}")
             with col2:
                 st.metric(label="Total Session Cost (USD)", value=f"${total_cost_usd:,.6f}")
             with col3:
                 st.metric(label="Total Session Cost (IDR)", value=f"Rp {total_cost_idr:,.2f}")
+            with col4:
+                st.metric(label="Duration", value=f"{last_usage['duration']:.2f}s")
 
             st.dataframe(st.session_state.usage_history, use_container_width=True)
 

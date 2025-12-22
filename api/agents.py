@@ -135,6 +135,7 @@ Here is your resume optimization report:
             }
 
     # 1. Router: Decide which agent to use
+    # TODO: add more prompt examples for more refined routing
     router_prompt_template = """You are an expert query router. Your job is to determine whether a user's question, in the context of a conversation history, should be answered by a RAG agent, a SQL agent, a Resume agent, or a general Chat agent.
 - RAG agent: Handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
 - SQL agent: Handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'.
