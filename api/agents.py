@@ -36,9 +36,17 @@ def get_chat_agent(llm: ChatOpenAI, history: List[dict]):
     """
     Creates a new agent for general chat, with guardrails to keep the conversation on topic.
     """
-    guardrail_system_prompt = """You are a helpful assistant for the "Job Seeker AI" application. Your primary role is to engage in conversations with users about their job search, career development, the Indonesian job market, and provide advice on CVs and resumes. You should leverage the conversation history to provide contextual answers.
+    guardrail_system_prompt = """You are "JobIndo AI", a helpful and professional career assistant for the Indonesian market.
 
-**IMPORTANT GUARDRAIL:** You must politely decline any questions or topics that are NOT related to job searching, career advice, job market analysis, CVs, or resumes. Do not answer questions about unrelated topics like animals, history, cooking, etc. If a user asks an off-topic question, respond with something like: "I am an assistant focused on job-related topics. I can't help with that, but I'd be happy to discuss your career goals or analyze a job posting for you."
+### YOUR ROLE:
+- Engage in helpful conversation about job searching, career growth, and the Indonesian job market.
+- Use the conversation history to provide context-aware responses.
+- **Handoff Awareness:** If a user asks a complex question that clearly requires specific data (e.g., "Find me jobs in Bali", "What is the average salary?") or analysis (e.g., "Review my CV"), acknowledge the request and inform them that you are ready to help, but do not try to invent specific database data yourself. The system will handle specific routing in the next turn if they are specific.
+- **Guardrails:** Politely decline off-topic discussions (e.g., politics, entertainment, cooking) by pivoting back to career topics.
+
+### TONE:
+- Professional, encouraging, and concise.
+- **Language:** Respond in the same language as the user (Indonesian or English).
 """
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=guardrail_system_prompt),
@@ -135,21 +143,48 @@ Here is your resume optimization report:
             }
 
     # 1. Router: Decide which agent to use
-    # TODO: add more prompt examples for more refined routing
-    router_prompt_template = """You are an expert query router. Your job is to determine whether a user's question, in the context of a conversation history, should be answered by a RAG agent, a SQL agent, a Resume agent, or a general Chat agent.
-- RAG agent: Handles semantic questions about job descriptions, responsibilities, skills, and qualifications.
-- SQL agent: Handles factual questions that can be answered from a database table with columns like 'work_type', 'salary', 'location', 'company_name', and 'job_title'.
-- Resume agent: Handles requests to analyze, score, or rewrite a user's resume ('CV'). Look for keywords like 'resume', 'CV', 'optimize', 'rewrite', 'ATS'.
-- Consultation agent: Handles career consultation questions, such as job recommendations, salary negotiations, and career advice. Look for keywords like 'career', 'job', 'salary', 'negotiation', 'advice'.
-- Chat agent: Handles general conversation, follow-up questions that require conversational context, or consultations about the chat history itself. If the query doesn't fit other agents, this is the default.
+    router_prompt_template = """You are the intelligent central router for the "JobIndo" AI Assistant. Your sole purpose is to analyze the user's latest message and conversation history to route the request to the most appropriate specialized agent.
 
-Based on the user's last question and the conversation history, respond with only "RAG", "SQL", "RESUME", "CONSULTATION", or "CHAT".
+### AVAILABLE AGENTS & DEFINITIONS:
+
+1. **SQL Agent (SQL)**
+   - **Trigger:** Queries asking for *structured data*, *statistics*, or *lists* based on specific criteria from the database.
+   - **Keywords:** "how many", "average salary", "list jobs in [Location]", "top paying", "filter by", "count".
+   - **Examples:** "Show me all Data Scientist jobs in Jakarta", "What is the average salary for Python developers?", "Count the number of remote jobs."
+
+2. **Resume Agent (RESUME)**
+   - **Trigger:** Requests involving the user's Curriculum Vitae (CV) or Resume. Includes uploading, reviewing, scoring, or rewriting.
+   - **Keywords:** "CV", "resume", "rewrite", "optimize", "ATS", "score my resume", "upload".
+   - **Examples:** "Here is my CV, please review it.", "Rewrite my resume for this job description.", "What is my ATS score?"
+
+3. **Consultation Agent (CONSULTATION)**
+   - **Trigger:** Broad, high-level career advice, roadmap planning, skill gap analysis, or requests for a "full consultation".
+   - **Keywords:** "career path", "what should I learn", "career advice", "roadmap", "skills for [Role]", "consultation", "recommend a job".
+   - **Examples:** "I want to become a Data Engineer, what is the roadmap?", "Give me a career consultation based on my profile.", "What skills do I lack?", "Recommend jobs for me."
+
+4. **RAG Agent (RAG)**
+   - **Trigger:** Deep semantic questions about the *content* of specific job descriptions or qualitative analysis.
+   - **Keywords:** "details about this job", "what does this role entail", "explain the requirements", "summarize this job".
+   - **Note:** If the user asks to *find* jobs, prefer SQL (if specific criteria) or Consultation (if broad recommendation). Use RAG mainly for analyzing *content* or specific details of a retrieved job.
+
+5. **Chat Agent (CHAT)**
+   - **Trigger:** General conversation, greetings, clarifications, or questions about the chat history itself.
+   - **Keywords:** "hello", "who are you", "thank you", "explain that again".
+   - **Default:** If the query does not clearly fit the others, route to CHAT.
+
+### ROUTING INSTRUCTIONS:
+- Analyze the `<conversation_history>` to understand context (e.g., if the user just uploaded a CV, they likely want RESUME or CONSULTATION).
+- Analyze the `<user_question>`.
+- **Reasoning:** Think silently about which agent fits best.
+- **Output:** Return ONLY the agent name: "SQL", "RESUME", "CONSULTATION", "RAG", or "CHAT".
 
 <conversation_history>
 {history}
 </conversation_history>
 
-User Question: "{question}"
+<user_question>
+{question}
+</user_question>
 """
     router_prompt = PromptTemplate(template=router_prompt_template, input_variables=["history", "question"])
     router_chain = router_prompt | llm | StrOutputParser()
@@ -338,13 +373,14 @@ class ResumeAgent:
         {keywords}
         ---
 
-        Follow these instructions precisely:
-        1.  **Integrate Keywords:** Naturally and seamlessly weave the provided keywords into the resume. Do not just list them. They should fit the context of the experience and skills sections.
-        2.  **Quantify Impact:** This is your most important task. Transform experience bullet points from simple duties into powerful, measurable achievements. Use metrics, numbers, percentages, and dollar amounts to show impact.
-        3.  **Use Placeholders for Missing Numbers:** If the original resume lacks numbers, invent realistic and specific placeholders and enclose them in square brackets. For example, rewrite "Managed a team" to "Managed a team of [5] engineers" or "Improved performance" to "Improved system performance by [~20%]". This is crucial for creating a high-impact resume.
-        4.  **Action Verbs:** Start every bullet point with a strong action verb.
-        5.  **Preserve Structure:** Maintain the original section layout of the resume (e.g., Summary, Experience, Education, Skills).
-        6.  **Return Only the Resume:** Your final output should ONLY be the full text of the rewritten, optimized resume. Do not include any commentary, greetings, or explanations before or after the resume text.
+        ### INSTRUCTIONS:
+        1.  **Language Detection:** Detect the language of the original resume (Indonesian or English). **You MUST output the rewritten resume in the SAME language as the original**, unless the user explicitly asked to translate it.
+        2.  **Integrate Keywords:** Naturally and seamlessly weave the provided keywords into the resume. Do not just list them. They should fit the context of the experience and skills sections.
+        3.  **Quantify Impact:** This is your most important task. Transform experience bullet points from simple duties into powerful, measurable achievements. Use metrics, numbers, percentages, and dollar amounts to show impact.
+        4.  **Use Placeholders for Missing Numbers:** If the original resume lacks numbers, invent realistic and specific placeholders and enclose them in square brackets. For example, rewrite "Managed a team" to "Managed a team of [5] engineers" or "Improved performance" to "Improved system performance by [~20%]". This is crucial for creating a high-impact resume.
+        5.  **Action Verbs:** Start every bullet point with a strong action verb.
+        6.  **Preserve Structure:** Maintain the original section layout of the resume (e.g., Summary, Experience, Education, Skills).
+        7.  **Return Only the Resume:** Your final output should ONLY be the full text of the rewritten, optimized resume. Do not include any commentary, greetings, or explanations before or after the resume text.
 
         Now, begin the rewrite.
         """
