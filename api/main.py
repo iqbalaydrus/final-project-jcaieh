@@ -115,11 +115,11 @@ async def chat(
     
     chat_response_data = {}
     if blob.exists():
-        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_file:
-            blob.download_to_file(tmp_file)
-            tmp_file.flush()
-            tmp_file.seek(0)
-            loader = PyPDFLoader(tmp_file.name)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file_path = os.path.join(tmp_dir, f"{req.session_id}.pdf")
+            with open(tmp_file_path, "wb") as tmp_file:
+                blob.download_to_file(tmp_file)
+            loader = PyPDFLoader(tmp_file_path)
             docs = loader.load()
         content = ""
         for page in docs:
