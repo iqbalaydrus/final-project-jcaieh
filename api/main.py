@@ -13,12 +13,14 @@ from fastapi import (
     Form,
     File,
 )
+
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from google.cloud import storage
 from google.cloud.storage.blob import Blob
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.utilities.sql_database import SQLDatabase
 
 load_dotenv()
@@ -37,6 +39,46 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET)
+
+
+def extract_text_from_pdf_multimodal(pdf_base64: str, filename: str = "document.pdf") -> str:
+    """
+    Text extraction from PDF using LLM.
+    """
+    try:
+        print(f"Extracting text from {filename} using multimodal LLM...")
+        
+        multimodal_llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=OPENAI_API_KEY,
+        )
+        
+        # Message format 
+        content_block = {
+            "type": "file",
+            "base64": pdf_base64,
+            "mime_type": "application/pdf",
+            "filename": filename,
+        }
+        
+        msg = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Extract all text content from this PDF document. Return only the extracted text without any additional commentary or formatting.",
+                },
+                content_block,
+            ],
+        }
+        
+        result = multimodal_llm.invoke([msg])
+        print("Text extraction successful via multimodal LLM.")
+        return result.content
+        
+    except Exception as e:
+        print(f"Error extracting text from PDF: {e}")
+        return ""
 
 
 @asynccontextmanager
@@ -94,6 +136,8 @@ async def upload(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type"
         )
+    
+    # Upload PDF -> GCS
     blob_name = f"uploads/{session_id}.pdf"
     blob: Blob = bucket.blob(blob_name)
     blob.upload_from_file(
@@ -101,7 +145,23 @@ async def upload(
         rewind=True,
         content_type=file.content_type,
     )
-    return {"id": blob_name}
+    
+    print(f"Processing PDF for session {session_id}...")
+    
+    # Download from GCS and generate base64 
+    pdf_bytes = blob.download_as_bytes()
+    file_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    
+    
+    extracted_text = extract_text_from_pdf_multimodal(file_base64, filename=f"{session_id}.pdf")
+    
+    if extracted_text:
+        text_blob_name = f"uploads/{session_id}_extracted.txt"
+        text_blob: Blob = bucket.blob(text_blob_name)
+        text_blob.upload_from_string(extracted_text, content_type="text/plain")
+        print(f"Extracted text cached to {text_blob_name}")
+    
+    return {"id": blob_name, "extracted": bool(extracted_text)}
 
 
 @app.post("/chat")
@@ -110,15 +170,23 @@ async def chat(
     _: bool = Depends(verify_api_key),
 ) -> schema.ChatResponse:
     blob_name = f"uploads/{req.session_id}.pdf"
+    text_blob_name = f"uploads/{req.session_id}_extracted.txt"
+    
     blob: Blob = bucket.blob(blob_name)
+    text_blob: Blob = bucket.blob(text_blob_name)
     
     chat_response_data = {}
     if blob.exists():
-        # Downloading PDF and converting to base64 
-        pdf_bytes = blob.download_as_bytes()
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-        
-        chat_response_data = agents.chat(req, pdf_base64)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file_path = os.path.join(tmp_dir, f"{req.session_id}.pdf")
+            with open(tmp_file_path, "wb") as tmp_file:
+                blob.download_to_file(tmp_file)
+            loader = PyPDFLoader(tmp_file_path)
+            docs = loader.load()
+        content = ""
+        for page in docs:
+            content += page.page_content + "\n"
+        chat_response_data = agents.chat(req, content)
     else:
         chat_response_data = agents.chat(req, None)
         
